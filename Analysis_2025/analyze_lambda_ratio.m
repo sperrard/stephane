@@ -1,0 +1,88 @@
+function [lambda_shell, lambda_mod] = analyze_lambda_ratio(kx, ky, kz, lambda, N, kmax, space_type)
+    % Analyze lambda ratios binned in k-modulus shells
+
+
+    % Create full 3D grids of kx, ky, kz
+    [KX, KY, KZ] = ndgrid(kx, ky, kz);
+
+    % Compute modulus of k
+    kmod_3D = sqrt(KX.^2 + KY.^2 + KZ.^2);
+
+    % Determine kmod_1D range
+    k_nonzero = kmod_3D(kmod_3D > 0);
+    kmod_min = min(k_nonzero);
+    if nargin < 6 || isempty(kmax)
+        kmod_max = max(kmod_3D(:));
+    else
+        kmod_max = kmax;
+    end
+
+    % Default space_type to 'lin' if not provided
+    if nargin < 7 || isempty(space_type)
+        space_type = 'lin';
+    end
+
+    % Define kmod_1D based on spacing type
+    if strcmp(space_type, 'log')
+        kmod_1D = logspace(log10(kmod_min), log10(kmod_max), N);
+    else
+        kmod_1D = linspace(kmod_min, kmod_max, N);
+    end
+
+    % Compute the mean difference dkmod
+    dkmod = gradient(kmod_1D);
+
+    % Initialize outputs
+    lambda_shell = {};
+    lambda_mod = struct('kmod', [], 'lambdamin', [], 'lambdaratio', []);
+
+    c = 1;
+    % Loop over each k-shell
+    for i = 1:N
+        % Create mask for shell
+        shell_mask = (kmod_3D >= (kmod_1D(i) - dkmod(i)/2)) & (kmod_3D <= (kmod_1D(i) + dkmod(i)/2));
+
+        sz = sum(sum(sum(shell_mask)));
+        if sz == 0
+            continue;
+        end
+
+        % Get kx, ky, kz, kmod values
+        kx_vals = KX(shell_mask);
+        ky_vals = KY(shell_mask);
+        kz_vals = KZ(shell_mask);
+        kmod_vals = kmod_3D(shell_mask);
+
+        linear_indices = find(shell_mask == 1);
+
+        % Compute lambda ratios
+        lambdamin_vals = zeros(1, sz);
+        lambdaratio_vals = zeros(1, sz);
+        for j = 1:sz
+            % Convert linear index to subscripts
+            [ix, iy, iz] = ind2sub(size(kmod_3D), linear_indices(j));
+            lambda_vec = lambda{ix, iy, iz};
+            lambda_vec_sorted = sort(lambda_vec, 'descend');
+            
+            lambdamin_vals(j) = lambda_vec_sorted(3);
+            lambdaratio_vals(j) = lambda_vec_sorted(1) / lambda_vec_sorted(2);
+        end
+
+        % Store in shell structure
+        lambda_shell{c} = struct( ...
+            'kx', kx_vals, ...
+            'ky', ky_vals, ...
+            'kz', kz_vals, ...
+            'kmod', kmod_vals, ...
+            'lambdamin', lambdamin_vals, ...
+            'lambdaratio', lambdaratio_vals ...
+        );
+
+        % Store mean lambdaratio
+        lambda_mod.kmod(c) = kmod_1D(i);
+        lambda_mod.lambdamin(c) = mean(lambdamin_vals);
+        lambda_mod.lambdaratio(c) = mean(lambdaratio_vals);
+
+        c = c + 1;
+    end
+end

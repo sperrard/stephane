@@ -1,0 +1,79 @@
+function [Eshell, Emod] = spectral_shells(kx, ky, kz, E, N, klim, space_type)
+    % Compute the spectral shell decomposition of a 3D energy spectrum
+    %
+    % Inputs:
+    %   kx, ky, kz - 1D arrays representing the wave number components
+    %   E - 3D array of size (length(kx), length(ky), length(kz))
+    %   N - Number of bins for kmod_1D
+    %   klim (optional) - 2-element array specifying the range of kmod_1D
+    %   space_type (optional) - 'lin' for linear spacing, 'log' for logarithmic spacing
+    %
+    % Outputs:
+    %   Eshell - Cell array containing spectral shell data
+    %   Emod - Struct with spectral shell-averaged values
+
+    % Ensure kx, ky, kz are column vectors
+    kx = kx(:);
+    ky = ky(:);
+    kz = kz(:);
+
+    % Create 3D meshgrids for kx, ky, kz
+    [KX, KY, KZ] = ndgrid(kx, ky, kz);
+
+    % Compute the modulus of the wave vectors
+    kmod_3D = sqrt(KX.^2 + KY.^2 + KZ.^2);
+
+    % Determine kmod_1D range
+    if nargin < 6 || isempty(klim)
+        kmod_min = min(kmod_3D(:));
+        kmod_max = max(kmod_3D(:));
+    else
+        kmod_min = klim(1);
+        kmod_max = klim(2);
+    end
+
+    % Default space_type to 'lin' if not provided
+    if nargin < 7 || isempty(space_type)
+        space_type = 'lin';
+    end
+
+    % Define kmod_1D based on spacing type
+    if strcmp(space_type, 'log')
+        if kmod_min <= 0  % Ensure valid logarithmic range
+            error('Logarithmic spacing requires positive kmod values.');
+        end
+        kmod_1D = logspace(log10(kmod_min), log10(kmod_max), N);
+    else
+        kmod_1D = linspace(kmod_min, kmod_max, N);
+    end
+
+    % Compute the mean difference dkmod
+    dkmod = gradient(kmod_1D);
+
+    % Initialize cell array Eshell
+    Eshell = cell(length(kmod_1D), 1);
+
+    % Initialize structure Emod
+    Emod.kmod = kmod_1D;
+    Emod.spec = zeros(size(kmod_1D));
+
+    % Iterate over kmod_1D values
+    for i = 1:length(kmod_1D)
+        % Find indices where kmod_3D is within the current shell range
+        mask = (kmod_3D >= kmod_1D(i) - dkmod(i)/2) & (kmod_3D <= kmod_1D(i) + dkmod(i)/2);
+
+        % Store the corresponding values in Eshell
+        Eshell{i}.kx = KX(mask);
+        Eshell{i}.ky = KY(mask);
+        Eshell{i}.kz = KZ(mask);
+        Eshell{i}.kmod = kmod_3D(mask);
+        Eshell{i}.spec = E(mask);
+
+        % Compute the mean spectral energy in the shell for Emod
+        if ~isempty(Eshell{i}.spec)
+            Emod.spec(i) = 4*pi*(kmod_1D(i)^2)*mean(Eshell{i}.spec);
+        else
+            Emod.spec(i) = 0; % Handle case where no values are found
+        end
+    end
+end
